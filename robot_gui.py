@@ -4,17 +4,26 @@ import time
 import random
 import sys
 import numpy as np
+import os
+
+# 🟢 بررسی نصب بودن کتابخانه‌های فارسی
+try:
+    import arabic_reshaper
+    from bidi.algorithm import get_display
+except ImportError:
+    print("❌ Error: Please run 'pip install python-bidi arabic-reshaper'")
+    sys.exit(1)
 
 # ---------- CONFIG ----------
 WIDTH, HEIGHT = 600, 600
-BG_COLOR = (173, 216, 230)  # Light Blue (Awake)
-SLEEP_BG = (10, 10, 15)  # Pitch Black (Sleep)
+BG_COLOR = (173, 216, 230)  # Light Blue
+SLEEP_BG = (10, 10, 15)  # Pitch Black
 SLEEP_FACE = (20, 20, 25)
 
 HEAD_COLOR = (255, 255, 255)
 FACE_COLOR = (50, 50, 60)
 CHEEK_COLOR = (255, 182, 193)
-EYE_COLOR = (80, 255, 230)  # Cyan Neon
+EYE_COLOR = (80, 255, 230)
 
 
 # ---------- PARTICLE SYSTEM (ZZZ) ----------
@@ -50,23 +59,54 @@ class RobotUI:
         pygame.mouse.set_visible(False)
         pygame.display.set_caption("Robot")
         self.clock = pygame.time.Clock()
-        self.font = pygame.font.SysFont("Comic Sans MS", 24, bold=True)
-        self.small_font = pygame.font.SysFont("Arial", 18)
-        self.z_font = pygame.font.SysFont("Arial", 40, bold=True)
+
+        # 🟢 1. لود کردن فونت فارسی اختصاصی
+        # حتماً فایل persian_font.ttf را کنار برنامه بگذارید
+        font_path = "persian_font.ttf"
+
+        if not os.path.exists(font_path):
+            print(f"⚠️ Warning: '{font_path}' not found! Trying system fonts...")
+            # تلاش برای پیدا کردن فونت سیستم اگر فایل نبود
+            font_path = pygame.font.match_font('arial')
+
+        try:
+            print(f"🔤 Loading Font from: {font_path}")
+            self.font = pygame.font.Font(font_path, 28)
+            self.question_font = pygame.font.Font(font_path, 24)
+            self.z_font = pygame.font.Font(font_path, 40)
+        except Exception as e:
+            print(f"❌ Font Load Error: {e}")
+            print("Using default font (Persian might look like blocks)")
+            self.font = pygame.font.SysFont("Arial", 28, bold=True)
+            self.question_font = pygame.font.SysFont("Arial", 24, bold=True)
+            self.z_font = pygame.font.SysFont("Arial", 40, bold=True)
+
         self.running = True
         self.state = "standby"
         self.mouth_open = 0
         self.blink_timer = time.time()
         self.is_blinking = False
+
         self.caption = "Booting..."
+        self.user_text = ""
+
         self.command_queue = []
         self.is_recording = False
         self.last_interaction = time.time()
         self.particles = []
 
-        # 🟢 NEW: Animation Offsets (Virtual Hardware)
         self.head_offset_x = 0
         self.head_offset_y = 0
+
+    # 🟢 2. تابع اصلاح متن فارسی
+    def render_persian(self, text):
+        if not text: return ""
+        try:
+            reshaped_text = arabic_reshaper.reshape(text)
+            bidi_text = get_display(reshaped_text)
+            return bidi_text
+        except:
+            return text
 
     def reset_timer(self):
         self.last_interaction = time.time()
@@ -78,33 +118,32 @@ class RobotUI:
             self.reset_timer()
         self.state = state
 
-        # Caption Logic
         if state == "standby":
-            self.caption = "Standby"
+            self.caption = "آماده‌باش"
         elif state == "listening":
-            self.caption = "Listening..."
+            self.caption = "گوش می‌دهم..."
+            self.user_text = ""
         elif state == "thinking":
-            self.caption = "Thinking..."
+            self.caption = "فکر می‌کنم..."
         elif state == "processing":
-            self.caption = "Processing..."
+            self.caption = "پردازش..."
         elif state == "idle":
-            self.caption = "Ready"
+            self.caption = "آماده"
         elif state == "sleeping":
-            self.caption = "Zzz..."
+            self.caption = "خواب..."
 
     def set_caption(self, text):
         self.caption = text
 
-    # 🟢 NEW: VIRTUAL NOD (YES)
+    def set_user_question(self, text):
+        self.user_text = f"شما: {text}"
+
     def trigger_nod(self):
         def animate():
-            # Nod Down/Up 3 times
             for _ in range(3):
-                # Down
                 for i in range(10):
                     self.head_offset_y += 2
                     time.sleep(0.01)
-                # Up
                 for i in range(10):
                     self.head_offset_y -= 2
                     time.sleep(0.01)
@@ -112,20 +151,15 @@ class RobotUI:
 
         threading.Thread(target=animate, daemon=True).start()
 
-    # 🟢 NEW: VIRTUAL SHAKE (NO)
     def trigger_shake(self):
         def animate():
-            # Shake Left/Right 3 times
             for _ in range(3):
-                # Right
                 for i in range(5):
                     self.head_offset_x += 4
                     time.sleep(0.01)
-                # Left
                 for i in range(10):
                     self.head_offset_x -= 4
                     time.sleep(0.01)
-                # Center
                 for i in range(5):
                     self.head_offset_x += 4
                     time.sleep(0.01)
@@ -140,13 +174,9 @@ class RobotUI:
                 pygame.mixer.music.load(filename)
                 pygame.mixer.music.play()
                 while pygame.mixer.music.get_busy():
-                    # Mouth Movement
                     target = random.randint(10, 60)
                     self.mouth_open += (target - self.mouth_open) * 0.5
-
-                    # 🟢 Talk Animation: Slight bobbing
                     self.head_offset_y = np.sin(time.time() * 15) * 2
-
                     time.sleep(0.1)
 
                 if self.state == "talking":
@@ -175,7 +205,6 @@ class RobotUI:
 
         self.screen.fill(bg)
 
-        # 🟢 Head Position + Animation Offsets
         if self.state in ["sleeping", "standby"]:
             bounce = 20
         else:
@@ -195,11 +224,9 @@ class RobotUI:
         # Eyes
         eye_y = head_y + 120
         if self.state in ["standby", "sleeping"]:
-            # Closed
             pygame.draw.line(self.screen, EYE_COLOR, (head_x + 100, eye_y + 40), (head_x + 160, eye_y + 40), 5)
             pygame.draw.line(self.screen, EYE_COLOR, (head_x + 240, eye_y + 40), (head_x + 300, eye_y + 40), 5)
         elif self.state == "thinking":
-            # Googly
             t = time.time() * 10
             off_x1 = np.sin(t) * 15;
             off_y1 = np.cos(t) * 15
@@ -210,7 +237,6 @@ class RobotUI:
             pygame.draw.circle(self.screen, (255, 255, 255), (int(head_x + 270), int(eye_y + 40)), 40)
             pygame.draw.circle(self.screen, (0, 0, 0), (int(head_x + 270 + off_x2), int(eye_y + 40 + off_y2)), 15)
         else:
-            # Normal
             now = time.time()
             if now - self.blink_timer > random.uniform(3, 6):
                 self.is_blinking = True
@@ -249,10 +275,19 @@ class RobotUI:
             p.draw(self.screen, self.z_font)
             if p.alpha <= 0: self.particles.remove(p)
 
-        # Text
+        # 🟢 3. رسم متن‌ها با اصلاح فارسی
         text_col = (200, 200, 200) if self.state in ["sleeping", "standby"] else (50, 50, 50)
-        text_surf = self.font.render(self.caption, True, text_col)
-        self.screen.blit(text_surf, text_surf.get_rect(center=(WIDTH // 2, HEIGHT - 80)))
+
+        # Caption
+        fixed_caption = self.render_persian(self.caption)
+        text_surf = self.font.render(fixed_caption, True, text_col)
+        self.screen.blit(text_surf, text_surf.get_rect(center=(WIDTH // 2, HEIGHT - 120)))
+
+        # User Question
+        if self.user_text:
+            fixed_user = self.render_persian(self.user_text)
+            q_surf = self.question_font.render(fixed_user, True, (0, 0, 80))
+            self.screen.blit(q_surf, q_surf.get_rect(center=(WIDTH // 2, HEIGHT - 60)))
 
         pygame.display.flip()
 
@@ -267,6 +302,3 @@ class RobotUI:
             self.draw()
             self.clock.tick(60)
         pygame.quit()
-
-
-

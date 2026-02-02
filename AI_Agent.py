@@ -1,4 +1,4 @@
-import sys,os, traceback, numpy as np, sounddevice as sd
+import sys, os, traceback, numpy as np, sounddevice as sd
 import json
 import librosa
 import torch
@@ -60,8 +60,9 @@ class_sys = ClassManager()
 
 # --- IMPORTS (Lazy) ---
 from langchain_ollama import OllamaLLM
+
 try:
-    from faster_whisper import  WhisperModel
+    from faster_whisper import WhisperModel
 except ImportError:
     print("Please install faster_whisper")
     sys.exit(1)
@@ -209,7 +210,6 @@ def transcribe_audio(audio_raw):
 
     try:
         # 🟢 Whisper Transcribe Logic
-        # It accepts the raw float32 array directly
         segments, info = stt_model.transcribe(audio_raw, beam_size=5, language="fa")
 
         text = ""
@@ -272,7 +272,7 @@ def perform_face_login(rec=None):
     identified_id = None
     start_time = time.time()
     TIMEOUT = 10
-    if ROBOT: ROBOT.set_caption("👀 Scanning...")
+    if ROBOT: ROBOT.set_caption("در حال اسکن چهره...")  # 🟢 Scanning Face (Persian)
 
     while identified_id is None:
         if time.time() - start_time > TIMEOUT: break
@@ -297,7 +297,7 @@ def perform_face_login(rec=None):
                 identified_id = detected_id
                 display_name = detected_id.split('_')[0]
                 if ROBOT:
-                    ROBOT.set_caption(f"HI {display_name}!")
+                    ROBOT.set_caption(f"سلام {display_name}!")
                     ROBOT.trigger_nod()
             else:
                 video_capture.release()
@@ -309,7 +309,7 @@ def perform_face_login(rec=None):
                     print("=" * 40 + "\n")
                 else:
                     if tts: sr, w = tts.synthesize("لطفا فقط اسمت رو بگو"); play(w, sr)
-                    if ROBOT: ROBOT.set_caption("👂 Waiting for name...")
+                    if ROBOT: ROBOT.set_caption("منتظر نام...")  # 🟢 Waiting for name
                     if rec:
                         audio = rec.smart_listen(max_duration=4)
                         p_name = transcribe_audio(audio)
@@ -328,7 +328,7 @@ def perform_face_login(rec=None):
                     if tts: sr, w = tts.synthesize(f"خوشبختم {p_name}"); play(w, sr)
                     display_name = identified_id.split('_')[0]
                     if ROBOT:
-                        ROBOT.set_caption(f"HI {display_name}!")
+                        ROBOT.set_caption(f"سلام {display_name}!")
                         ROBOT.trigger_nod()
                     return identified_id, display_name
                 return "Guest", "Guest"
@@ -409,7 +409,7 @@ def filter_context_by_keywords(full_text, question):
 
 
 # ---------------------------------------------------------
-# ✅ MAIN LOGIC
+# ✅ MAIN LOGIC (FINAL POLISHED VERSION)
 # ---------------------------------------------------------
 def run_ai_logic():
     global stt_model, stt_processor, tts, llm, CURRENT_USER_ID, CURRENT_USER_DISPLAY, LAST_USER
@@ -417,18 +417,17 @@ def run_ai_logic():
     if ROBOT: ROBOT.set_caption("Loading Brain...")
 
     try:
+        # 🟢 1. Initialize Brains
         llm = OllamaLLM(model="qwen2.5", base_url="http://localhost:11434", temperature=0.1)
         tts = TextToSpeechService()
+
         if not TEST_TEXT_MODE:
             print("⏳ Loading Whisper Model from local folder 'whisper'...")
             device = "cuda" if torch.cuda.is_available() else "cpu"
             print(f"🚀 Using Device: {device}")
-
-            # 🟢 LOAD FROM LOCAL FOLDER
-            # "whisper" refers to the folder name next to your script
             stt_model = WhisperModel("whisper", device=device, compute_type="float16" if device == "cuda" else "int8")
-
             print("✅ Local Whisper Model Loaded!")
+
     except Exception as e:
         print(f"Init Error: {e}")
 
@@ -446,9 +445,10 @@ def run_ai_logic():
 
     while ROBOT.running:
         ROBOT.set_state("idle")
-        ROBOT.set_caption("Waiting for wake word ('salam')...")
+        ROBOT.set_caption("برای بیدار کردن ربات سلام بده")  # 🟢 "Say Hello to wake up"
         wake_detected = False
 
+        # --- WAKE WORD DETECTION ---
         if TEST_TEXT_MODE:
             text = input("\nWaiting for wake word (type 'salam'): ").strip().lower()
             if "salam" in text or "سلام" in text or "hi" in text: wake_detected = True
@@ -461,19 +461,25 @@ def run_ai_logic():
                 for word in WAKE_WORDS:
                     if word in text.lower(): wake_detected = True; break
 
+        # --- IF WAKE DETECTED ---
         if wake_detected:
             if ROBOT: ROBOT.trigger_nod()
             if tts: sr, w = tts.synthesize("من آماده ام"); play(w, sr)
+
+            # 1. FACE RECOGNITION
             ROBOT.set_state("thinking")
+            ROBOT.set_caption("در حال پردازش...")  # 🟢 Processing...
             u_id, u_display = perform_face_login(rec)
             CURRENT_USER_ID = u_id
             CURRENT_USER_DISPLAY = u_display
 
+            # سلام کردن به کاربر
             if CURRENT_USER_ID != "Guest" and CURRENT_USER_ID != LAST_USER:
                 if tts: sr, w = tts.synthesize(f"سلام {CURRENT_USER_DISPLAY}"); play(w, sr)
                 if ROBOT: ROBOT.trigger_nod()
                 LAST_USER = CURRENT_USER_ID
 
+            # 2. CLASS CHECK
             user_class = None
             if CURRENT_USER_ID != "Guest":
                 user_class = class_sys.get_user_class(CURRENT_USER_ID)
@@ -496,21 +502,21 @@ def run_ai_logic():
                 print("⚠️ DEBUG: Auto-assigning Class 5 for testing")
                 user_class = "5"
 
+            # 3. LOAD DOCUMENTS
             if user_class:
                 if user_class != last_class_checked:
                     print(f"\n📂 [DEBUG] LOADING ALL DOCUMENTS FOR CLASS {user_class}...")
+                    ROBOT.set_caption("در حال خواندن فایل‌ها...")  # 🟢 Reading files...
                     cached_doc_context = class_sys.get_class_context(user_class)
-                    found_files = re.findall(r"--- Document: (.*?) ---", cached_doc_context)
-                    if found_files:
-                        print(f"📚 [DEBUG] LOADED FILES: {', '.join(found_files)}")
                     last_class_checked = user_class
                     print(f"✅ [DEBUG] LOAD COMPLETE! ({len(cached_doc_context)} chars)")
                 else:
                     print(f"⚡ [DEBUG] USING CACHED DATA ({len(cached_doc_context)} chars)")
 
+            # 4. LISTEN FOR QUESTION
             ROBOT.set_state("listening")
-            display_info = f"HI {CURRENT_USER_DISPLAY} (Class {user_class})"
-            ROBOT.set_caption(f"{display_info}")
+            display_info = f"{CURRENT_USER_DISPLAY} (کلاس {user_class})"
+            ROBOT.set_caption(f"گوش می‌دهم... ({display_info})")  # 🟢 Listening...
 
             q_text = ""
             if TEST_TEXT_MODE:
@@ -522,13 +528,58 @@ def run_ai_logic():
                 q_text = transcribe_audio(q_audio)
 
             if q_text and len(q_text) > 2:
+                # نرمال‌سازی متن فارسی
+                q_text = q_text.replace("ي", "ی").replace("ك", "ک")
                 print(f"❓ Question: {q_text}")
+
+                # نمایش سوال روی صورت ربات
+                if ROBOT: ROBOT.set_user_question(q_text)
+
+                # =========================================================
+                # 🟢 1. یادگیری اسم (Name Learning)
+                # =========================================================
+                if "اسم من" in q_text and (q_text.endswith("ه") or "است" in q_text):
+                    parts = q_text.split()
+                    if len(parts) >= 3:
+                        new_name = parts[2]
+                        if new_name.endswith("ه") and len(new_name) > 2:
+                            new_name = new_name[:-1]
+                        elif new_name == "است":
+                            new_name = parts[1]
+
+                        CURRENT_USER_DISPLAY = new_name
+                        ROBOT.set_caption("در حال پردازش...")  # 🟢 Processing...
+                        respond = f"خیلی خوشبختم {new_name}."
+                        print(f"🤖 Bot: {respond}")
+                        if tts: sr, w = tts.synthesize(respond); play(w, sr)
+                        time.sleep(1)
+                        continue
+
+                # =========================================================
+                # 🟢 2. یادآوری اسم (Name Recall)
+                # =========================================================
+                if "اسم من چیه" in q_text or "من کیم" in q_text or "اسمم چیه" in q_text:
+                    ROBOT.set_caption("در حال پردازش...")  # 🟢 Processing...
+                    if CURRENT_USER_DISPLAY == "Unknown" or CURRENT_USER_DISPLAY == "Guest":
+                        respond = "هنوز اسمت رو نمیدونم. بگو 'اسم من ...ه' تا یاد بگیرم."
+                    else:
+                        respond = f"اسم شما {CURRENT_USER_DISPLAY} است."
+
+                    print(f"🤖 Bot: {respond}")
+                    if tts: sr, w = tts.synthesize(respond); play(w, sr)
+                    time.sleep(1)
+                    continue
+
+                # =========================================================
+                # 🟢 3. هوش مصنوعی (درس)
+                # =========================================================
                 ROBOT.set_state("thinking")
+                ROBOT.set_caption("در حال فکر کردن...")  # 🟢 Thinking...
                 user_history = ""
                 if CURRENT_USER_ID != "Guest":
                     user_history = get_smart_history(CURRENT_USER_ID)
 
-                # 🟢 FILTERING
+                # FILTERING
                 final_context = ""
                 if cached_doc_context:
                     relevant_snippet = filter_context_by_keywords(cached_doc_context, q_text)
