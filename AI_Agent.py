@@ -409,7 +409,7 @@ def filter_context_by_keywords(full_text, question):
 
 
 # ---------------------------------------------------------
-# ✅ MAIN LOGIC (FINAL POLISHED VERSION)
+# ✅ MAIN LOGIC (FINAL: NO NUMBERS, SMOOTH SPEECH)
 # ---------------------------------------------------------
 def run_ai_logic():
     global stt_model, stt_processor, tts, llm, CURRENT_USER_ID, CURRENT_USER_DISPLAY, LAST_USER
@@ -445,7 +445,7 @@ def run_ai_logic():
 
     while ROBOT.running:
         ROBOT.set_state("idle")
-        ROBOT.set_caption("برای بیدار کردن ربات سلام بده")  # 🟢 "Say Hello to wake up"
+        ROBOT.set_caption("برای بیدار کردن ربات سلام بده")
         wake_detected = False
 
         # --- WAKE WORD DETECTION ---
@@ -455,6 +455,10 @@ def run_ai_logic():
         else:
             audio_chunk = rec.listen_chunk(duration=2.0)
             if audio_chunk is None: continue
+
+            # FIX AUDIO ERROR
+            audio_chunk = np.nan_to_num(audio_chunk)
+
             text = transcribe_audio(audio_chunk)
             if text:
                 print(f"🎤 HEARD: '{text}'")
@@ -468,12 +472,11 @@ def run_ai_logic():
 
             # 1. FACE RECOGNITION
             ROBOT.set_state("thinking")
-            ROBOT.set_caption("در حال پردازش...")  # 🟢 Processing...
+            ROBOT.set_caption("در حال پردازش...")
             u_id, u_display = perform_face_login(rec)
             CURRENT_USER_ID = u_id
             CURRENT_USER_DISPLAY = u_display
 
-            # سلام کردن به کاربر
             if CURRENT_USER_ID != "Guest" and CURRENT_USER_ID != LAST_USER:
                 if tts: sr, w = tts.synthesize(f"سلام {CURRENT_USER_DISPLAY}"); play(w, sr)
                 if ROBOT: ROBOT.trigger_nod()
@@ -490,6 +493,7 @@ def run_ai_logic():
                         c_text = input("👉 ENTER CLASS: ").strip()
                     else:
                         c_audio = rec.smart_listen(max_duration=5)
+                        if c_audio is not None: c_audio = np.nan_to_num(c_audio)
                         c_text = transcribe_audio(c_audio)
                     if c_text:
                         detected_num = class_sys.extract_class_number(c_text)
@@ -506,7 +510,7 @@ def run_ai_logic():
             if user_class:
                 if user_class != last_class_checked:
                     print(f"\n📂 [DEBUG] LOADING ALL DOCUMENTS FOR CLASS {user_class}...")
-                    ROBOT.set_caption("در حال خواندن فایل‌ها...")  # 🟢 Reading files...
+                    ROBOT.set_caption("در حال خواندن فایل‌ها...")
                     cached_doc_context = class_sys.get_class_context(user_class)
                     last_class_checked = user_class
                     print(f"✅ [DEBUG] LOAD COMPLETE! ({len(cached_doc_context)} chars)")
@@ -516,7 +520,7 @@ def run_ai_logic():
             # 4. LISTEN FOR QUESTION
             ROBOT.set_state("listening")
             display_info = f"{CURRENT_USER_DISPLAY} (کلاس {user_class})"
-            ROBOT.set_caption(f"گوش می‌دهم... ({display_info})")  # 🟢 Listening...
+            ROBOT.set_caption(f"گوش می‌دهم... ({display_info})")
 
             q_text = ""
             if TEST_TEXT_MODE:
@@ -525,18 +529,18 @@ def run_ai_logic():
                 print("=" * 40 + "\n")
             else:
                 q_audio = rec.smart_listen(max_duration=10)
-                q_text = transcribe_audio(q_audio)
+                if q_audio is not None:
+                    q_audio = np.nan_to_num(q_audio)
+                    q_text = transcribe_audio(q_audio)
 
             if q_text and len(q_text) > 2:
-                # نرمال‌سازی متن فارسی
                 q_text = q_text.replace("ي", "ی").replace("ك", "ک")
                 print(f"❓ Question: {q_text}")
 
-                # نمایش سوال روی صورت ربات
                 if ROBOT: ROBOT.set_user_question(q_text)
 
                 # =========================================================
-                # 🟢 1. یادگیری اسم (Name Learning)
+                # 🟢 1. Name Logic
                 # =========================================================
                 if "اسم من" in q_text and (q_text.endswith("ه") or "است" in q_text):
                     parts = q_text.split()
@@ -546,99 +550,114 @@ def run_ai_logic():
                             new_name = new_name[:-1]
                         elif new_name == "است":
                             new_name = parts[1]
-
                         CURRENT_USER_DISPLAY = new_name
-                        ROBOT.set_caption("در حال پردازش...")  # 🟢 Processing...
+                        ROBOT.set_caption("در حال پردازش...")
                         respond = f"خیلی خوشبختم {new_name}."
                         print(f"🤖 Bot: {respond}")
                         if tts: sr, w = tts.synthesize(respond); play(w, sr)
                         time.sleep(1)
                         continue
 
-                # =========================================================
-                # 🟢 2. یادآوری اسم (Name Recall)
-                # =========================================================
                 if "اسم من چیه" in q_text or "من کیم" in q_text or "اسمم چیه" in q_text:
-                    ROBOT.set_caption("در حال پردازش...")  # 🟢 Processing...
+                    ROBOT.set_caption("در حال پردازش...")
                     if CURRENT_USER_DISPLAY == "Unknown" or CURRENT_USER_DISPLAY == "Guest":
-                        respond = "هنوز اسمت رو نمیدونم. بگو 'اسم من ...ه' تا یاد بگیرم."
+                        respond = "هنوز اسمت رو نمیدونم."
                     else:
                         respond = f"اسم شما {CURRENT_USER_DISPLAY} است."
-
                     print(f"🤖 Bot: {respond}")
                     if tts: sr, w = tts.synthesize(respond); play(w, sr)
                     time.sleep(1)
                     continue
 
                 # =========================================================
-                # 🟢 3. هوش مصنوعی (درس)
+                # 🟢 2. AI Logic
                 # =========================================================
                 ROBOT.set_state("thinking")
-                ROBOT.set_caption("در حال فکر کردن...")  # 🟢 Thinking...
+                ROBOT.set_caption("در حال فکر کردن...")
                 user_history = ""
                 if CURRENT_USER_ID != "Guest":
                     user_history = get_smart_history(CURRENT_USER_ID)
 
-                # FILTERING
                 final_context = ""
                 if cached_doc_context:
                     relevant_snippet = filter_context_by_keywords(cached_doc_context, q_text)
                     if relevant_snippet:
                         final_context = relevant_snippet
                     else:
-                        print("⚠️ No match found in memory.")
                         final_context = ""
 
                 prompt = (
                     f"### System:\n"
-                    f"You are a Teacher Assistant Robot speaking Persian (Farsi).\n"
-                    f"You must answer using ONLY the CLASS DOCUMENTS provided below.\n\n"
+                    f"You are a helpful Teacher Assistant Robot speaking Persian (Farsi).\n"
+                    f"Answer based ONLY on the CLASS DOCUMENTS provided below.\n\n"
 
-                    f"### CLASS DOCUMENTS (RELEVANT SECTIONS):\n"
-                    f"{final_context}\n\n"
-
+                    f"### CLASS DOCUMENTS:\n{final_context}\n\n"
                     f"### History:\n{user_history}\n\n"
                     f"### Question:\n{q_text}\n\n"
 
-                    f"### STRICT INSTRUCTIONS:\n"
-                    f"1. Search the documents above for the answer.\n"
-                    f"2. You MUST start your response with: 'SOURCE: [File Name]'.\n"
-                    f"3. If the answer is found, copy it from the text.\n"
-                    f"4. If the provided text is empty or answer is NOT found, write: 'SOURCE: General Knowledge' then answer.\n"
-                    f"5. Answer in Persian.\n\n"
+                    f"### STRICT RULES:\n"
+                    f"1. Start answer with 'SOURCE: [File Name]'.\n"
+                    f"2. Explain simply in Persian.\n"
+                    f"3. **UNKNOWN:** If answer is NOT in documents, SAY: 'من فقط درباره درس‌ها می‌دانم و جواب این سوال در جزوه نیست.'\n"
+                    f"4. **GIBBERISH:** If input is nonsense, SAY: 'متوجه نشدم، لطفا واضح‌تر بگویید.'\n"
+                    f"5. **NO EXTRA TEXT:** Do not translate to Chinese or English. Do not explain your rules.\n\n"
 
                     f"### Assistant (Persian):"
                 )
 
                 try:
-                    ans = llm.invoke(prompt, stop=["### User:", "User:"]).strip()
+                    ans = llm.invoke(prompt, stop=["### User:", "User:", "History:", "大纲", "翻译"]).strip()
                     print(f"\n🧠 [DEBUG] RAW OUTPUT:\n{ans}\n")
 
-                    source_log = "Unknown / General Knowledge"
+                    # --- CLEANING ---
+                    garbage_triggers = ["大纲", "翻译", "History:", "Strict Rules:", "###"]
+                    for trigger in garbage_triggers:
+                        if trigger in ans: ans = ans.split(trigger)[0]
+
+                    source_log = "Unknown"
                     clean_ans = ans
 
                     if "SOURCE:" in ans:
                         lines = ans.split('\n')
-                        new_lines = []
+                        cleaned_lines = []
                         for line in lines:
                             if "SOURCE:" in line:
                                 source_log = line.replace("SOURCE:", "").strip()
-                            elif "ANSWER:" in line:
-                                pass
                             else:
-                                new_lines.append(line)
-                        clean_ans = "\n".join(new_lines).strip()
+                                cleaned_lines.append(line)
+                        clean_ans = "\n".join(cleaned_lines).strip()
 
-                    clean_ans = clean_ans.replace("*", "").replace("#", "").replace("**", "")
+                    # ====================================================
+                    # 🟢 MANUAL FLATTENING (Updated to remove numbers)
+                    # ====================================================
+
+                    # 1. Remove Markdown symbols
+                    tts_text = clean_ans.replace("*", "").replace("#", "").replace("- ", " ").replace("•", "")
+
+                    # 🟢 2. REMOVE NUMBERS (1. , 2. , 3. ...)
+                    # This removes any number followed by a dot
+                    tts_text = re.sub(r'\d+\.', '', tts_text)
+
+                    # 3. Replace Colons
+                    tts_text = tts_text.replace(":", " ")
+
+                    # 4. Replace Newlines with Dots
+                    tts_text = tts_text.replace("\n", ". ")
+
+                    # 5. Remove extra spaces
+                    tts_text = re.sub(r'\s+', ' ', tts_text).strip()
 
                     print(f"🧐 [SOURCE CHECK]: {source_log}")
-                    print(f"🤖 AI Answer: {clean_ans}")
+                    print(f"🗣️ TTS TEXT: {tts_text}")
 
                     should_save = True
-                    if "سلام! چطور" in clean_ans and len(clean_ans) < 50: should_save = False
+                    if "متوجه نشدم" in tts_text or "در جزوه نیست" in tts_text: should_save = False
+
                     if CURRENT_USER_ID != "Guest" and should_save:
-                        memory_sys.save_interaction(CURRENT_USER_ID, q_text, clean_ans)
-                    if tts: sr, w = tts.synthesize(clean_ans); play(w, sr)
+                        memory_sys.save_interaction(CURRENT_USER_ID, q_text, tts_text)
+
+                    if tts: sr, w = tts.synthesize(tts_text); play(w, sr)
+
                 except Exception as e:
                     print(f"AI Error: {e}")
             else:
