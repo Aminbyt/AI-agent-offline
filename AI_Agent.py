@@ -340,40 +340,44 @@ def perform_face_login(rec=None):
 
 
 # ---------------------------------------------------------
-# ✅ ULTRA-SMART SEARCH (AND LOGIC)
+# ✅ ULTRA-SMART SEARCH (UPDATED STOPWORDS)
 # ---------------------------------------------------------
 def filter_context_by_keywords(full_text, question):
     if not full_text: return ""
 
+    # 🟢 تغییر ۱: اضافه کردن کلمات احوال‌پرسی به لیست سیاه
+    # این باعث می‌شود برای "سلام" یا "خوبی" جستجوی بیهوده انجام ندهد
     STOPWORDS = ["چیست", "کیست", "کجاست", "چگونه", "چطور", "آیا", "من", "تو", "او", "ما", "شما", "آنها", "است", "هست",
-                 "بگو", "توضیح", "بده", "درباره", "مورد", "را", "با", "از", "در", "که", "و", "ها", "های"]
+                 "بگو", "توضیح", "بده", "درباره", "مورد", "را", "با", "از", "در", "که", "و", "ها", "های",
+                 "سلام", "خوبی", "چطوری", "ممنون", "تشکر", "درود", "خداحافظ", "صبح", "شب", "بخیر"]
 
     words = question.replace("؟", "").replace("!", "").split()
     keywords = [w for w in words if w not in STOPWORDS and len(w) > 2]
 
     print(f"🔍 [SEARCH] Keywords: {keywords}")
-    if not keywords: return full_text[:10000]
+
+    # اگر هیچ کلمه کلیدی پیدا نشد (مثلاً فقط گفت "سلام")، متن فایل‌ها را برنگردان
+    # تا هوش مصنوعی مجبور شود از دانش خودش استفاده کند.
+    if not keywords:
+        print("⚠️ [SEARCH] No specific keywords (Chit-chat detected). Skipping docs.")
+        return ""
 
     lines = full_text.split('\n')
-
-    # 🟢 1. STRICT MATCH: Line must contain ALL keywords (e.g. "مراحل" AND "کاوشگری")
     best_indices = []
 
     for i, line in enumerate(lines):
         if all(kw in line for kw in keywords):
             best_indices.append(i)
 
-    window_size = 20  # Lines after match
+    window_size = 20
 
-    # 🟢 2. FALLBACK: If no exact match, look for PARTIAL match (e.g. 2 out of 3 words)
     if not best_indices and len(keywords) > 1:
         for i, line in enumerate(lines):
             matches = sum(1 for kw in keywords if kw in line)
-            if matches >= len(keywords) * 0.6:  # 60% match
+            if matches >= len(keywords) * 0.6:
                 best_indices.append(i)
-        window_size = 10  # Smaller context for loose matches
+        window_size = 10
 
-    # 🟢 3. LAST RESORT: Any keyword (only if nothing else found)
     if not best_indices:
         print("⚠️ [SEARCH] Strict match failed. Trying loose match...")
         for i, line in enumerate(lines):
@@ -385,7 +389,6 @@ def filter_context_by_keywords(full_text, question):
         print("⚠️ [SEARCH] No keywords found in text.")
         return ""
 
-    # Extract Text with Window
     included_indices = set()
     for idx in best_indices:
         start = max(0, idx - 5)
@@ -394,7 +397,6 @@ def filter_context_by_keywords(full_text, question):
             included_indices.add(i)
 
     sorted_indices = sorted(list(included_indices))
-
     output = []
     last_idx = -1
     for idx in sorted_indices:
@@ -409,7 +411,7 @@ def filter_context_by_keywords(full_text, question):
 
 
 # ---------------------------------------------------------
-# ✅ MAIN LOGIC (FINAL: SLEEP MODE ADDED)
+# ✅ MAIN LOGIC (FINAL: HYBRID KNOWLEDGE)
 # ---------------------------------------------------------
 def run_ai_logic():
     global stt_model, stt_processor, tts, llm, CURRENT_USER_ID, CURRENT_USER_DISPLAY, LAST_USER
@@ -417,17 +419,14 @@ def run_ai_logic():
     if ROBOT: ROBOT.set_caption("Loading Brain...")
 
     try:
-        # 🟢 1. Initialize Brains
         llm = OllamaLLM(model="qwen2.5", base_url="http://localhost:11434", temperature=0.1)
         tts = TextToSpeechService()
-
         if not TEST_TEXT_MODE:
             print("⏳ Loading Whisper Model from local folder 'whisper'...")
             device = "cuda" if torch.cuda.is_available() else "cpu"
             print(f"🚀 Using Device: {device}")
             stt_model = WhisperModel("whisper", device=device, compute_type="float16" if device == "cuda" else "int8")
             print("✅ Local Whisper Model Loaded!")
-
     except Exception as e:
         print(f"Init Error: {e}")
 
@@ -436,47 +435,37 @@ def run_ai_logic():
 
     print("\n✅ ROBOT READY")
     if TEST_TEXT_MODE:
-        print("🔴 MODE: TEXT (Type 'Salam')")
+        print("🔴 MODE: TEXT")
     else:
-        print("🟢 MODE: VOICE (Say 'Salam')")
+        print("🟢 MODE: VOICE")
 
     last_class_checked = None
     cached_doc_context = ""
 
     while ROBOT.running:
-        # 🟢 CHANGE 1: Go to SLEEP while waiting
         ROBOT.set_state("sleeping")
         ROBOT.set_caption("خواب... (برای بیدار شدن سلام کنید)")
-
         wake_detected = False
 
-        # --- WAKE WORD DETECTION ---
         if TEST_TEXT_MODE:
             text = input("\nWaiting for wake word (type 'salam'): ").strip().lower()
             if "salam" in text or "سلام" in text or "hi" in text: wake_detected = True
         else:
-            # گوش دادن در حالت خواب
             audio_chunk = rec.listen_chunk(duration=2.0)
             if audio_chunk is None: continue
-
             audio_chunk = np.nan_to_num(audio_chunk)
             text = transcribe_audio(audio_chunk)
-
             if text:
                 print(f"🎤 HEARD (Sleep Mode): '{text}'")
                 for word in WAKE_WORDS:
                     if word in text.lower(): wake_detected = True; break
 
-        # --- IF WAKE DETECTED ---
         if wake_detected:
-            # 🟢 CHANGE 2: WAKE UP!
-            ROBOT.set_state("idle")  # چشم‌ها باز می‌شود
+            ROBOT.set_state("idle")
             ROBOT.set_caption("بیدار شدم!")
-
             if ROBOT: ROBOT.trigger_nod()
-            if tts: sr, w = tts.synthesize("جانم، بیدارم"); play(w, sr)
+            if tts: sr, w = tts.synthesize("بیدارم"); play(w, sr)
 
-            # 1. FACE RECOGNITION
             ROBOT.set_state("thinking")
             ROBOT.set_caption("در حال پردازش...")
             u_id, u_display = perform_face_login(rec)
@@ -488,7 +477,6 @@ def run_ai_logic():
                 if ROBOT: ROBOT.trigger_nod()
                 LAST_USER = CURRENT_USER_ID
 
-            # 2. CLASS CHECK
             user_class = None
             if CURRENT_USER_ID != "Guest":
                 user_class = class_sys.get_user_class(CURRENT_USER_ID)
@@ -512,7 +500,6 @@ def run_ai_logic():
                 print("⚠️ DEBUG: Auto-assigning Class 5 for testing")
                 user_class = "5"
 
-            # 3. LOAD DOCUMENTS
             if user_class:
                 if user_class != last_class_checked:
                     print(f"\n📂 [DEBUG] LOADING ALL DOCUMENTS FOR CLASS {user_class}...")
@@ -523,7 +510,6 @@ def run_ai_logic():
                 else:
                     print(f"⚡ [DEBUG] USING CACHED DATA ({len(cached_doc_context)} chars)")
 
-            # 4. LISTEN FOR QUESTION
             ROBOT.set_state("listening")
             display_info = f"{CURRENT_USER_DISPLAY} (کلاس {user_class})"
             ROBOT.set_caption(f"گوش می‌دهم... ({display_info})")
@@ -545,9 +531,7 @@ def run_ai_logic():
 
                 if ROBOT: ROBOT.set_user_question(q_text)
 
-                # =========================================================
-                # 🟢 1. Name Logic
-                # =========================================================
+                # Name Logic
                 if "اسم من" in q_text and (q_text.endswith("ه") or "است" in q_text):
                     parts = q_text.split()
                     if len(parts) >= 3:
@@ -557,7 +541,6 @@ def run_ai_logic():
                         elif new_name == "است":
                             new_name = parts[1]
                         CURRENT_USER_DISPLAY = new_name
-                        ROBOT.set_caption("در حال پردازش...")
                         respond = f"خیلی خوشبختم {new_name}."
                         print(f"🤖 Bot: {respond}")
                         if tts: sr, w = tts.synthesize(respond); play(w, sr)
@@ -565,7 +548,6 @@ def run_ai_logic():
                         continue
 
                 if "اسم من چیه" in q_text or "من کیم" in q_text or "اسمم چیه" in q_text:
-                    ROBOT.set_caption("در حال پردازش...")
                     if CURRENT_USER_DISPLAY == "Unknown" or CURRENT_USER_DISPLAY == "Guest":
                         respond = "هنوز اسمت رو نمیدونم."
                     else:
@@ -575,9 +557,6 @@ def run_ai_logic():
                     time.sleep(1)
                     continue
 
-                # =========================================================
-                # 🟢 2. AI Logic
-                # =========================================================
                 ROBOT.set_state("thinking")
                 ROBOT.set_caption("در حال فکر کردن...")
                 user_history = ""
@@ -590,24 +569,23 @@ def run_ai_logic():
                     if relevant_snippet:
                         final_context = relevant_snippet
                     else:
-                        final_context = ""
+                        final_context = ""  # اگر هیچی پیدا نشد، خالی بفرست
 
+                # 🟢 PROMPT UPDATE: HYBRID MODE
                 prompt = (
                     f"### System:\n"
-                    f"You are a helpful Teacher Assistant Robot speaking Persian (Farsi).\n"
-                    f"Answer based ONLY on the CLASS DOCUMENTS provided below.\n\n"
+                    f"You are a helpful Assistant Robot speaking Persian (Farsi).\n"
+                    f"You have access to CLASS DOCUMENTS below, but you also have your own general knowledge.\n\n"
 
                     f"### CLASS DOCUMENTS:\n{final_context}\n\n"
                     f"### History:\n{user_history}\n\n"
                     f"### Question:\n{q_text}\n\n"
 
-                    f"### STRICT RULES:\n"
-                    f"1. Start answer with 'SOURCE: [File Name]'.\n"
-                    f"2. Explain simply in Persian.\n"
-                    f"3. **SMART FIX:** If user says 'تنبور' but means 'زنبور', answer about bees.\n"
-                    f"4. **UNKNOWN:** If answer is NOT in documents, SAY: 'من فقط درباره درس‌ها می‌دانم و جواب این سوال در جزوه نیست.'\n"
-                    f"5. **GIBBERISH:** If input is nonsense, SAY: 'متوجه نشدم، لطفا واضح‌تر بگویید.'\n"
-                    f"6. **NO EXTRA TEXT:** Do not translate to Chinese or English. Do not explain your rules.\n\n"
+                    f"### INSTRUCTIONS:\n"
+                    f"1. **CHECK DOCUMENTS FIRST:** If the user asks about the class/lesson, answer ONLY from the documents and start with 'SOURCE: [File Name]'.\n"
+                    f"2. **GENERAL QUESTIONS:** If the user asks general questions (e.g. 'Hello', 'How are you', 'Capital of Iran', 'Math'), answer using your OWN knowledge. Do NOT use 'SOURCE:'.\n"
+                    f"3. **SMART FIX:** Fix typos (e.g. 'تنبور' -> 'زنبور').\n"
+                    f"4. **FORMAT:** Answer simply in Persian. No English words.\n\n"
 
                     f"### Assistant (Persian):"
                 )
@@ -621,7 +599,7 @@ def run_ai_logic():
                     for trigger in garbage_triggers:
                         if trigger in ans: ans = ans.split(trigger)[0]
 
-                    source_log = "Unknown"
+                    source_log = "General Knowledge / Unknown"
                     clean_ans = ans
 
                     if "SOURCE:" in ans:
@@ -645,7 +623,7 @@ def run_ai_logic():
                     print(f"🗣️ TTS TEXT: {tts_text}")
 
                     should_save = True
-                    if "متوجه نشدم" in tts_text or "در جزوه نیست" in tts_text: should_save = False
+                    if "متوجه نشدم" in tts_text: should_save = False
 
                     if CURRENT_USER_ID != "Guest" and should_save:
                         memory_sys.save_interaction(CURRENT_USER_ID, q_text, tts_text)
