@@ -1,6 +1,7 @@
 whisper/
 v3_model/
 model_v3/
+chatterbox_model/
 image_models/
 persian_model_female/
 *.bin

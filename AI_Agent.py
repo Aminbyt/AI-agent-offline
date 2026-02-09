@@ -1,4 +1,5 @@
 import sys, os, traceback, numpy as np, sounddevice as sd
+import  pygame
 import json
 import librosa
 import torch
@@ -13,8 +14,9 @@ from scipy.io.wavfile import write as write_wav
 import cv2
 import face_recognition
 
-# 🔴🔴🔴 SETTINGS: True = Type (Test), False = Voice (Real) 🔴🔴🔴
-TEST_TEXT_MODE = False
+#SETTINGS: True = Type (Test), False = Voice (Real)
+
+TEST_TEXT_MODE = True
 
 # ✅ IMPORT UTILS
 try:
@@ -87,7 +89,7 @@ ROBOT = None
 
 
 # ---------------------------------------------------------
-# ✅ SMART HISTORY
+# SMART HISTORY
 # ---------------------------------------------------------
 def get_smart_history(unique_id):
     json_path = os.path.join("robot_memory", f"{unique_id}.json")
@@ -107,7 +109,7 @@ def get_smart_history(unique_id):
 
 
 # ---------------------------------------------------------
-# ✅ RECORDER & STT (FIXED FOR YOUR MIC)
+# RECORDER & STT (FIXED FOR YOUR MIC)
 # ---------------------------------------------------------
 class Recorder:
     def __init__(self):
@@ -223,42 +225,55 @@ def transcribe_audio(audio_raw):
 
 
 # ---------------------------------------------------------
-# ✅ TTS
+# PLAY FUNCTION (Universal Player)
 # ---------------------------------------------------------
-def play(wav, sr):
-    if wav is None or len(wav) == 0: return
+def play(audio_data, sr):
+    if audio_data is None: return
+
     try:
-        if hasattr(sr, '__iter__'):
-            sr = int(sr[0])
-        else:
-            sr = int(sr)
-        if sr <= 0: sr = 22050
-        unique_id = uuid.uuid4().hex[:8]
-        filepath = os.path.join(VOICE_DIR, f"voice_{int(time.time())}_{unique_id}.wav")
-        if isinstance(wav, bytes):
-            wav = np.frombuffer(wav, dtype=np.int16).astype(np.float32) / 32768.0
-        elif not isinstance(wav, np.ndarray):
-            wav = np.array(wav)
-        if wav.dtype == np.int16: wav = wav.astype(np.float32) / 32768.0
-        if len(wav) == 0: return
-        if wav.ndim > 1: wav = wav.flatten()
-        try:
-            wav = librosa.effects.pitch_shift(wav, sr=sr, n_steps=3.0, bins_per_octave=12)
-        except:
-            pass
-        max_val = np.max(np.abs(wav))
-        if max_val > 0: wav = wav / max_val
-        write_wav(filepath, sr, (wav * 32767).astype(np.int16))
-        if ROBOT:
-            ROBOT.play_file(filepath)
-            time.sleep(0.5)
-            while ROBOT.state == "talking": time.sleep(0.1)
+        filepath = None
+
+        # حالت اول: ورودی آدرس فایل است (از Chatterbox یا EdgeTTS)
+        if isinstance(audio_data, str) and os.path.exists(audio_data):
+            filepath = audio_data
+
+        # حالت دوم: ورودی داده خام است (اگر مدل دیگری استفاده شود)
+        elif isinstance(audio_data, (np.ndarray, list)):
+            # باید اول ذخیره‌اش کنیم
+            unique_id = uuid.uuid4().hex[:8]
+            filepath = os.path.join(VOICE_DIR, f"temp_{unique_id}.wav")
+            # نرمال‌سازی و ذخیره (با فرض sr ورودی)
+            wav = np.array(audio_data)
+            max_val = np.max(np.abs(wav))
+            if max_val > 0: wav = wav / max_val
+            write_wav(filepath, sr, (wav * 32767).astype(np.int16))
+
+        if filepath:
+            try:
+                # اطمینان از لود شدن میکسر
+                if not pygame.mixer.get_init():
+                    pygame.mixer.init()
+
+                pygame.mixer.music.load(filepath)
+                pygame.mixer.music.play()
+
+                # حرکت دهان ربات
+                if ROBOT:
+                    ROBOT.set_state("talking")
+                    while pygame.mixer.music.get_busy():
+                        ROBOT.mouth_open = np.random.randint(10, 60)
+                        time.sleep(0.1)
+                    ROBOT.set_state("idle")
+                    ROBOT.mouth_open = 0
+            except Exception as e:
+                print(f"Audio Play Error: {e}")
+
     except Exception as e:
-        print(f"TTS Error: {e}")
+        print(f"Play Logic Error: {e}")
 
 
 # ---------------------------------------------------------
-# ✅ FACE LOGIN
+# FACE LOGIN
 # ---------------------------------------------------------
 def perform_face_login(rec=None):
     global CURRENT_USER_ID, CURRENT_USER_DISPLAY, llm
@@ -340,7 +355,7 @@ def perform_face_login(rec=None):
 
 
 # ---------------------------------------------------------
-# ✅ ULTRA-SMART SEARCH (AND LOGIC)
+# ULTRA-SMART SEARCH (AND LOGIC)
 # ---------------------------------------------------------
 def filter_context_by_keywords(full_text, question):
     if not full_text: return ""
@@ -409,7 +424,7 @@ def filter_context_by_keywords(full_text, question):
 
 
 # ---------------------------------------------------------
-# ✅ MAIN LOGIC (FINAL: NO NUMBERS, SMOOTH SPEECH)
+# MAIN LOGIC (FINAL: NO NUMBERS, SMOOTH SPEECH)
 # ---------------------------------------------------------
 def run_ai_logic():
     global stt_model, stt_processor, tts, llm, CURRENT_USER_ID, CURRENT_USER_DISPLAY, LAST_USER
