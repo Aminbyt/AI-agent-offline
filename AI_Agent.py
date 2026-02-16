@@ -1,5 +1,5 @@
 import sys, os, traceback, numpy as np, sounddevice as sd
-import  pygame
+import pygame
 import json
 import librosa
 import torch
@@ -14,9 +14,10 @@ from scipy.io.wavfile import write as write_wav
 import cv2
 import face_recognition
 
-#SETTINGS: True = Type (Test), False = Voice (Real)
-
-TEST_TEXT_MODE = True
+# ==========================================
+# ⚙️ SETTINGS
+# ==========================================
+TEST_TEXT_MODE = False
 
 # ✅ IMPORT UTILS
 try:
@@ -24,7 +25,6 @@ try:
 except ImportError:
     print("❌ Error: 'memory.py' not found.")
     sys.exit(1)
-import numpy as np
 
 try:
     import robot_gui
@@ -89,6 +89,122 @@ ROBOT = None
 
 
 # ---------------------------------------------------------
+# 🟢 PRONUNCIATION DICTIONARY (دیکشنری تلفظ)
+# ---------------------------------------------------------
+def fix_pronunciation(text):
+    if not text: return ""
+
+    # لیست کلمات (سمت چپ: کلمه معمولی | سمت راست: کلمه با اِعراب)
+    corrections = {
+        # --- کلمات روزمره ---
+        "سلام": "سَلام",
+        "خداحافظ": "خُداحافِظ",
+        "ممنون": "مَمنون",
+        "متشکرم": "مُتِشَکِّرَم",
+        "تشکر": "تَشَکُّر",
+        "لطفا": "لُطفاً",
+        "حتما": "حَتماً",
+        "خیلی": "خِیلی",
+        "بله": "بَلِه",
+        "خیر": "خِیر",
+        "شاید": "شایَد",
+        "البته": "اَلبَتِّه",
+        "چطور": "چِطور",
+        "چگونه": "چِگونِه",
+        "کجا": "کُجا",
+        "کی": "کِی",  # زمان
+
+        # --- مدرسه و آموزش ---
+        "معلم": "مُعَلِّم",
+        "مدرسه": "مَدرِسِه",
+        "کلاس": "کِلاس",
+        "درس": "دَرس",
+        "مشق": "مَشق",
+        "امتحان": "اِمتِحان",
+        "نمره": "نُمرِه",
+        "ریاضی": "رِیاضی",
+        "علوم": "عُلوم",
+        "فارسی": "فارسی",
+        "تاریخ": "تاریخ",
+        "جغرافیا": "جُغرافیا",
+        "سوال": "سُوال",
+        "جواب": "جَواب",
+        "پاسخ": "پاسُخ",
+        "دانش": "دانِش",
+        "آموز": "آموز",
+
+        # --- افعال و ضمایر ---
+        " است ": " اَست ",
+        " هست ": " هَست ",
+        " بود ": " بود ",
+        " شد ": " شُد ",
+        " کرد ": " کَرد ",
+        " گفت ": " گُفت ",
+        " رفت ": " رَفت ",
+        " آمد ": " آمَد ",
+        " من ": " مَن ",
+        " تو ": " تُو ",
+        " ما ": " ما ",
+        " شما ": " شُما ",
+
+        # --- صفات و اسم‌ها ---
+        "بزرگ": "بُزُرگ",
+        "کوچک": "کوچَک",
+        "خوب": "خوب",
+        "بد": "بَد",
+        "زیبا": "زیبا",
+        "زشت": "زِشت",
+        "سریع": "سَریع",
+        "کند": "کُند",
+        "مهم": "مُهِم",
+        "اسم": "اِسم",
+        "نام": "نام",
+        "کشور": "کِشوَر",
+        "شهر": "شَهر",
+        "جهان": "جَهان",
+        "دنیا": "دُنیا",
+        "حیوان": "حِیوان",
+        "انسان": "اِنسان",
+        "ربات": "رُبات",
+        "هوش": "هوشِ",
+        "مصنوعی": "مَصنوعی",
+        "اطلاعات": "اِطِّلاعات",
+        "ویژگی": "ویژِگی",
+
+        # --- کلمات خاص ---
+        "کرگدن": "کَرگَدَن",
+        "امین": "اَمین",
+        "ایران": "ایران",
+        "آلمان": "آلمان",
+        "فرانسه": "فَرانسه",
+        "زرافه": "زَرافه",
+        "خرس": "خِرس",
+        "گربه": "گُربه",
+        "شتر": "شُتُر",
+        "کروکدیل": "کُروکُدیل",
+        "مربع": "مُرَبّع",
+        "مستطیل": "مُسطَتیل",
+        "خواهر": "خوُاهَر",
+        "خواب": "خوُاب",
+        "کرم": "کِرم",
+        "گل": "گُل",
+        "چهارپایه":"چاهارپا"
+    }
+
+    # جایگزینی کلمات
+    for wrong, correct in corrections.items():
+        text = text.replace(f" {wrong} ", f" {correct} ")
+        if text.startswith(wrong + " "):
+            text = text.replace(wrong + " ", correct + " ", 1)
+        if text.endswith(" " + wrong):
+            text = text[:-len(wrong)] + correct
+        if text == wrong:
+            text = correct
+
+    return text
+
+
+# ---------------------------------------------------------
 # SMART HISTORY
 # ---------------------------------------------------------
 def get_smart_history(unique_id):
@@ -109,15 +225,11 @@ def get_smart_history(unique_id):
 
 
 # ---------------------------------------------------------
-# RECORDER & STT (FIXED FOR YOUR MIC)
+# RECORDER & STT
 # ---------------------------------------------------------
 class Recorder:
     def __init__(self):
-        # 🟢 Use the ID that worked before (22).
-        # If 22 fails, change to None to let Windows choose the default mic.
         self.dev = 22
-
-        # 🟢 Restored to 48000 because your mic likes this setting
         self.rate = 48000
         self.channels = 2
         self.dtype = 'float32'
@@ -125,17 +237,11 @@ class Recorder:
         self.stream = None
 
     def _convert_to_whisper_format(self, audio_data):
-        """Internal helper to convert 48k Stereo -> 16k Mono for Whisper"""
         try:
-            # 1. If Stereo (2 channels), mix to Mono
             if audio_data.ndim > 1:
                 audio_data = audio_data.mean(axis=1)
-
-            # 2. Resample from 48000 -> 16000
-            # We use librosa for high-quality resampling
             if self.rate != 16000:
                 audio_data = librosa.resample(audio_data, orig_sr=self.rate, target_sr=16000)
-
             return audio_data.flatten()
         except Exception as e:
             print(f"⚠️ Audio Conversion Error: {e}")
@@ -146,7 +252,6 @@ class Recorder:
             recording = sd.rec(int(duration * self.rate), samplerate=self.rate,
                                channels=self.channels, device=self.dev, dtype=self.dtype)
             sd.wait()
-            # 🟢 Convert before returning
             return self._convert_to_whisper_format(recording)
         except:
             return None
@@ -170,11 +275,7 @@ class Recorder:
         except:
             pass
         if not self.data: return np.array([], dtype=np.float32)
-
-        # Combine chunks
         full_raw = np.concatenate(self.data)
-
-        # 🟢 Convert before returning
         return self._convert_to_whisper_format(full_raw)
 
     def smart_listen(self, max_duration=8, silence_duration=0.8, threshold=0.02):
@@ -187,37 +288,28 @@ class Recorder:
         while (time.time() - start_time) < max_duration:
             time.sleep(0.05)
             if not self.data: continue
-
             try:
                 recent = self.data[-3:]
                 if not recent: continue
                 flat = np.concatenate(recent)
                 vol = np.max(np.abs(flat))
-
                 if vol > threshold:
                     last_sound_time = time.time()
                     has_spoken = True
-
                 if has_spoken and (time.time() - last_sound_time) > silence_duration:
                     break
             except:
                 pass
-
         return self.stop()
 
 
 def transcribe_audio(audio_raw):
-    # Check if audio is valid
     if audio_raw is None or stt_model is None or len(audio_raw) < 1000: return None
-
     try:
-        # 🟢 Whisper Transcribe Logic
-        segments, info = stt_model.transcribe(audio_raw, beam_size=5, language="fa")
-
+        segments, info = stt_model.transcribe(audio_raw, beam_size=1, language="fa")
         text = ""
         for segment in segments:
             text += segment.text + " "
-
         return text.strip()
     except Exception as e:
         print(f"STT Error: {e}")
@@ -225,24 +317,17 @@ def transcribe_audio(audio_raw):
 
 
 # ---------------------------------------------------------
-# PLAY FUNCTION (Universal Player)
+# PLAY FUNCTION
 # ---------------------------------------------------------
 def play(audio_data, sr):
     if audio_data is None: return
-
     try:
         filepath = None
-
-        # حالت اول: ورودی آدرس فایل است (از Chatterbox یا EdgeTTS)
         if isinstance(audio_data, str) and os.path.exists(audio_data):
             filepath = audio_data
-
-        # حالت دوم: ورودی داده خام است (اگر مدل دیگری استفاده شود)
         elif isinstance(audio_data, (np.ndarray, list)):
-            # باید اول ذخیره‌اش کنیم
             unique_id = uuid.uuid4().hex[:8]
             filepath = os.path.join(VOICE_DIR, f"temp_{unique_id}.wav")
-            # نرمال‌سازی و ذخیره (با فرض sr ورودی)
             wav = np.array(audio_data)
             max_val = np.max(np.abs(wav))
             if max_val > 0: wav = wav / max_val
@@ -250,14 +335,10 @@ def play(audio_data, sr):
 
         if filepath:
             try:
-                # اطمینان از لود شدن میکسر
                 if not pygame.mixer.get_init():
                     pygame.mixer.init()
-
                 pygame.mixer.music.load(filepath)
                 pygame.mixer.music.play()
-
-                # حرکت دهان ربات
                 if ROBOT:
                     ROBOT.set_state("talking")
                     while pygame.mixer.music.get_busy():
@@ -267,7 +348,6 @@ def play(audio_data, sr):
                     ROBOT.mouth_open = 0
             except Exception as e:
                 print(f"Audio Play Error: {e}")
-
     except Exception as e:
         print(f"Play Logic Error: {e}")
 
@@ -276,7 +356,7 @@ def play(audio_data, sr):
 # FACE LOGIN
 # ---------------------------------------------------------
 def perform_face_login(rec=None):
-    global CURRENT_USER_ID, CURRENT_USER_DISPLAY, llm
+    global CURRENT_USER_ID, CURRENT_USER_DISPLAY, llm, memory_sys
     known_encodings, known_ids = attendance_sys.load_known_faces()
     video_capture = None
     for idx in [1, 0, 2]:
@@ -287,7 +367,7 @@ def perform_face_login(rec=None):
     identified_id = None
     start_time = time.time()
     TIMEOUT = 10
-    if ROBOT: ROBOT.set_caption("در حال اسکن چهره...")  # 🟢 Scanning Face (Persian)
+    if ROBOT: ROBOT.set_caption("در حال اسکن چهره...")
 
     while identified_id is None:
         if time.time() - start_time > TIMEOUT: break
@@ -308,123 +388,111 @@ def perform_face_login(rec=None):
                 detected_id = known_ids[first_match_index]
 
             if detected_id != "Unknown":
-                attendance_sys.mark_attendance(detected_id)
+                # 🟢 فقط اگر اولین بار امروز باشد True می‌دهد
+                is_first_time_today = attendance_sys.mark_attendance(detected_id)
+
                 identified_id = detected_id
-                display_name = detected_id.split('_')[0]
+                saved_persian_name = memory_sys.get_profile_value(detected_id, "name")
+                display_name = saved_persian_name if saved_persian_name else detected_id.split('_')[0]
+
                 if ROBOT:
-                    ROBOT.set_caption(f"سلام {display_name}!")
+                    ROBOT.set_caption(f"شناسایی شد: {display_name}")
                     ROBOT.trigger_nod()
+                    # 🟢 LOGIC: فقط اگر اولین بار است سلام کن
+                    if is_first_time_today:
+                        if tts: sr, w = tts.synthesize(f"سَلام {display_name}."); play(w, sr)
             else:
                 video_capture.release()
                 cv2.destroyAllWindows()
-                p_name = ""
+                p_name_farsi = ""
                 if TEST_TEXT_MODE:
                     print("\n" + "=" * 40)
-                    p_name = input("👉 NEW USER - ENTER NAME: ").strip()
+                    p_name_farsi = input("👉 NEW USER - ENTER NAME (Farsi): ").strip()
                     print("=" * 40 + "\n")
                 else:
-                    if tts: sr, w = tts.synthesize("لطفا فقط اسمت رو بگو"); play(w, sr)
-                    if ROBOT: ROBOT.set_caption("منتظر نام...")  # 🟢 Waiting for name
+                    if tts: sr, w = tts.synthesize("شُما را نِمیشِناسَم. لُطفاً اِسمِتان را بِگویید."); play(w, sr)
+                    if ROBOT: ROBOT.set_caption("نام شما چیست؟")
                     if rec:
                         audio = rec.smart_listen(max_duration=4)
-                        p_name = transcribe_audio(audio)
+                        p_name_farsi = transcribe_audio(audio)
 
-                if p_name and len(p_name) > 2:
-                    base_name = f"User"
+                if p_name_farsi and len(p_name_farsi) > 1:
+                    base_filename = "User"
                     try:
                         if llm:
-                            prompt = f"Write ONLY the English transliteration of '{p_name}'. One word."
-                            base_name = llm.invoke(prompt).strip().replace(".", "").split()[0]
+                            prompt = f"Convert '{p_name_farsi}' to English letters (Pinglish). One word."
+                            base_filename = llm.invoke(prompt).strip().replace(".", "").split()[0]
                     except:
-                        pass
-                    print(f"📂 Registering new user: {base_name}")
-                    unique_id = attendance_sys.register_student(base_name, frame, encs[0])
+                        base_filename = f"User_{uuid.uuid4().hex[:4]}"
+
+                    print(f"📂 Registering: File={base_filename} | Name={p_name_farsi}")
+                    unique_id = attendance_sys.register_student(base_filename, frame, encs[0])
+                    memory_sys.update_profile(unique_id, "name", p_name_farsi)
+
                     identified_id = unique_id
-                    if tts: sr, w = tts.synthesize(f"خوشبختم {p_name}"); play(w, sr)
-                    display_name = identified_id.split('_')[0]
+                    display_name = p_name_farsi
+                    if tts: sr, w = tts.synthesize(f"خوشبَختَم {p_name_farsi}."); play(w, sr)
                     if ROBOT:
-                        ROBOT.set_caption(f"سلام {display_name}!")
+                        ROBOT.set_caption(f"ثبت شد: {display_name}")
                         ROBOT.trigger_nod()
                     return identified_id, display_name
                 return "Guest", "Guest"
 
     if video_capture.isOpened(): video_capture.release()
     cv2.destroyAllWindows()
-    if identified_id: return identified_id, identified_id.split('_')[0]
-    return "Guest", "Guest"
+
+    final_display = "Guest"
+    if identified_id:
+        saved = memory_sys.get_profile_value(identified_id, "name")
+        final_display = saved if saved else identified_id.split('_')[0]
+    return identified_id, final_display
 
 
 # ---------------------------------------------------------
-# ULTRA-SMART SEARCH (AND LOGIC)
+# 🟢 ULTRA-SMART SEARCH (این تابع حذف شده بود!)
 # ---------------------------------------------------------
 def filter_context_by_keywords(full_text, question):
     if not full_text: return ""
-
     STOPWORDS = ["چیست", "کیست", "کجاست", "چگونه", "چطور", "آیا", "من", "تو", "او", "ما", "شما", "آنها", "است", "هست",
                  "بگو", "توضیح", "بده", "درباره", "مورد", "را", "با", "از", "در", "که", "و", "ها", "های"]
-
     words = question.replace("؟", "").replace("!", "").split()
     keywords = [w for w in words if w not in STOPWORDS and len(w) > 2]
 
     print(f"🔍 [SEARCH] Keywords: {keywords}")
-    if not keywords: return full_text[:10000]
+    if not keywords: return full_text[:2000]
 
     lines = full_text.split('\n')
-
-    # 🟢 1. STRICT MATCH: Line must contain ALL keywords (e.g. "مراحل" AND "کاوشگری")
     best_indices = []
-
     for i, line in enumerate(lines):
-        if all(kw in line for kw in keywords):
+        if any(kw in line for kw in keywords):
             best_indices.append(i)
 
-    window_size = 20  # Lines after match
-
-    # 🟢 2. FALLBACK: If no exact match, look for PARTIAL match (e.g. 2 out of 3 words)
-    if not best_indices and len(keywords) > 1:
-        for i, line in enumerate(lines):
-            matches = sum(1 for kw in keywords if kw in line)
-            if matches >= len(keywords) * 0.6:  # 60% match
-                best_indices.append(i)
-        window_size = 10  # Smaller context for loose matches
-
-    # 🟢 3. LAST RESORT: Any keyword (only if nothing else found)
     if not best_indices:
-        print("⚠️ [SEARCH] Strict match failed. Trying loose match...")
-        for i, line in enumerate(lines):
-            if any(kw in line for kw in keywords):
-                best_indices.append(i)
-        window_size = 5
-
-    if not best_indices:
-        print("⚠️ [SEARCH] No keywords found in text.")
+        print("⚠️ [SEARCH] No keywords found.")
         return ""
 
-    # Extract Text with Window
-    included_indices = set()
-    for idx in best_indices:
-        start = max(0, idx - 5)
-        end = min(len(lines), idx + window_size)
-        for i in range(start, end):
-            included_indices.add(i)
-
-    sorted_indices = sorted(list(included_indices))
-
     output = []
+    char_count = 0
+    MAX_CHARS = 4500
+    sorted_indices = sorted(list(set(best_indices)))
     last_idx = -1
     for idx in sorted_indices:
-        if last_idx != -1 and idx > last_idx + 1:
-            output.append("\n... [بخش دیگر] ...\n")
-        output.append(lines[idx])
-        last_idx = idx
-
-    result_text = "\n".join(output)
-    print(f"✅ [SEARCH] Found {len(result_text)} chars of relevant text.")
-    return result_text
+        if char_count >= MAX_CHARS: break
+        start = max(0, idx - 2)
+        end = min(len(lines), idx + 3)
+        for i in range(start, end):
+            if i <= last_idx: continue
+            line = lines[i].strip()
+            if len(line) > 5:
+                output.append(line)
+                char_count += len(line)
+                last_idx = i
+            if char_count >= MAX_CHARS: break
+    return "\n".join(output)
 
 
 # ---------------------------------------------------------
-# MAIN LOGIC (FINAL: NO NUMBERS, SMOOTH SPEECH)
+# MAIN LOGIC
 # ---------------------------------------------------------
 def run_ai_logic():
     global stt_model, stt_processor, tts, llm, CURRENT_USER_ID, CURRENT_USER_DISPLAY, LAST_USER
@@ -432,28 +500,33 @@ def run_ai_logic():
     if ROBOT: ROBOT.set_caption("Loading Brain...")
 
     try:
-        # 🟢 1. Initialize Brains
-        llm = OllamaLLM(model="qwen2.5", base_url="http://localhost:11434", temperature=0.1)
+        # 🟢 Brain Setup
+        llm = OllamaLLM(
+            model="llama3.1",
+            base_url="http://localhost:11434",
+            temperature=0.1,
+            keep_alive="0m"
+        )
         tts = TextToSpeechService()
 
         if not TEST_TEXT_MODE:
-            print("⏳ Loading Whisper Model from local folder 'whisper'...")
+            print("⏳ Loading Whisper Model...")
             device = "cuda" if torch.cuda.is_available() else "cpu"
             print(f"🚀 Using Device: {device}")
             stt_model = WhisperModel("whisper", device=device, compute_type="float16" if device == "cuda" else "int8")
-            print("✅ Local Whisper Model Loaded!")
+            print("✅ Whisper Loaded!")
 
     except Exception as e:
         print(f"Init Error: {e}")
 
     rec = Recorder() if not TEST_TEXT_MODE else None
-    WAKE_WORDS = ["سلام", "salam", "slm", "سالام", "سلان", "صلام", "hi", "hello", "درود"]
+    WAKE_WORDS = ["سلام", "salam", "slm", "سالام", "سلان", "صلام", "hi", "hello", "درود", "سلم"]
 
     print("\n✅ ROBOT READY")
     if TEST_TEXT_MODE:
-        print("🔴 MODE: TEXT (Type 'Salam')")
+        print("🔴 MODE: TEXT")
     else:
-        print("🟢 MODE: VOICE (Say 'Salam')")
+        print("🟢 MODE: VOICE")
 
     last_class_checked = None
     cached_doc_context = ""
@@ -463,38 +536,33 @@ def run_ai_logic():
         ROBOT.set_caption("برای بیدار کردن ربات سلام بده")
         wake_detected = False
 
-        # --- WAKE WORD DETECTION ---
+        # --- WAKE WORD ---
         if TEST_TEXT_MODE:
-            text = input("\nWaiting for wake word (type 'salam'): ").strip().lower()
-            if "salam" in text or "سلام" in text or "hi" in text: wake_detected = True
+            text = input("\nWaiting (type 'salam'): ").strip().lower()
+            if "salam" in text or "سلام" in text: wake_detected = True
         else:
             audio_chunk = rec.listen_chunk(duration=2.0)
             if audio_chunk is None: continue
-
-            # FIX AUDIO ERROR
             audio_chunk = np.nan_to_num(audio_chunk)
-
             text = transcribe_audio(audio_chunk)
             if text:
                 print(f"🎤 HEARD: '{text}'")
                 for word in WAKE_WORDS:
                     if word in text.lower(): wake_detected = True; break
 
-        # --- IF WAKE DETECTED ---
         if wake_detected:
             if ROBOT: ROBOT.trigger_nod()
-            if tts: sr, w = tts.synthesize("من آماده ام"); play(w, sr)
+            # ✅ حرکت‌گذاری شده (همیشه می‌گوید من آماده‌ام)
+            if tts: sr, w = tts.synthesize("مَن آمادِه‌اَم."); play(w, sr)
 
             # 1. FACE RECOGNITION
             ROBOT.set_state("thinking")
-            ROBOT.set_caption("در حال پردازش...")
+            # داخل این تابع تصمیم می‌گیرد که سلام کند یا نه
             u_id, u_display = perform_face_login(rec)
             CURRENT_USER_ID = u_id
             CURRENT_USER_DISPLAY = u_display
 
-            if CURRENT_USER_ID != "Guest" and CURRENT_USER_ID != LAST_USER:
-                if tts: sr, w = tts.synthesize(f"سلام {CURRENT_USER_DISPLAY}"); play(w, sr)
-                if ROBOT: ROBOT.trigger_nod()
+            if CURRENT_USER_ID != "Guest":
                 LAST_USER = CURRENT_USER_ID
 
             # 2. CLASS CHECK
@@ -502,7 +570,7 @@ def run_ai_logic():
             if CURRENT_USER_ID != "Guest":
                 user_class = class_sys.get_user_class(CURRENT_USER_ID)
                 if not user_class:
-                    if tts: sr, w = tts.synthesize("کلاس چندمی؟"); play(w, sr)
+                    if tts: sr, w = tts.synthesize("کِلاسِ چَندُمی؟"); play(w, sr)
                     c_text = ""
                     if TEST_TEXT_MODE:
                         c_text = input("👉 ENTER CLASS: ").strip()
@@ -515,32 +583,29 @@ def run_ai_logic():
                         if detected_num:
                             class_sys.set_user_class(CURRENT_USER_ID, detected_num)
                             user_class = detected_num
-                            if tts: sr, w = tts.synthesize(f"کلاس {detected_num} ثبت شد"); play(w, sr)
+                            if tts: sr, w = tts.synthesize(f"کِلاسِ {detected_num} ثَبت شُد."); play(w, sr)
 
             if CURRENT_USER_ID != "Guest" and not user_class:
-                print("⚠️ DEBUG: Auto-assigning Class 5 for testing")
+                print("⚠️ DEBUG: Auto-assigning Class 5")
                 user_class = "5"
 
             # 3. LOAD DOCUMENTS
             if user_class:
                 if user_class != last_class_checked:
-                    print(f"\n📂 [DEBUG] LOADING ALL DOCUMENTS FOR CLASS {user_class}...")
-                    ROBOT.set_caption("در حال خواندن فایل‌ها...")
+                    print(f"\n📂 [DEBUG] LOADING CLASS {user_class}...")
                     cached_doc_context = class_sys.get_class_context(user_class)
                     last_class_checked = user_class
-                    print(f"✅ [DEBUG] LOAD COMPLETE! ({len(cached_doc_context)} chars)")
                 else:
-                    print(f"⚡ [DEBUG] USING CACHED DATA ({len(cached_doc_context)} chars)")
+                    print(f"⚡ [DEBUG] CACHED DATA")
 
             # 4. LISTEN FOR QUESTION
             ROBOT.set_state("listening")
-            display_info = f"{CURRENT_USER_DISPLAY} (کلاس {user_class})"
-            ROBOT.set_caption(f"گوش می‌دهم... ({display_info})")
+            ROBOT.set_caption(f"گوش می‌دهم... ({CURRENT_USER_DISPLAY})")
 
             q_text = ""
             if TEST_TEXT_MODE:
                 print("\n" + "=" * 40)
-                q_text = input(f"👉 {CURRENT_USER_DISPLAY}, ASK QUESTION: ").strip()
+                q_text = input(f"👉 {CURRENT_USER_DISPLAY}, ASK: ").strip()
                 print("=" * 40 + "\n")
             else:
                 q_audio = rec.smart_listen(max_duration=10)
@@ -551,133 +616,217 @@ def run_ai_logic():
             if q_text and len(q_text) > 2:
                 q_text = q_text.replace("ي", "ی").replace("ك", "ک")
                 print(f"❓ Question: {q_text}")
-
                 if ROBOT: ROBOT.set_user_question(q_text)
 
                 # =========================================================
-                # 🟢 1. Name Logic
+                # 🚀 1. FAST REFLEX
                 # =========================================================
-                if "اسم من" in q_text and (q_text.endswith("ه") or "است" in q_text):
-                    parts = q_text.split()
-                    if len(parts) >= 3:
-                        new_name = parts[2]
-                        if new_name.endswith("ه") and len(new_name) > 2:
-                            new_name = new_name[:-1]
-                        elif new_name == "است":
-                            new_name = parts[1]
-                        CURRENT_USER_DISPLAY = new_name
-                        ROBOT.set_caption("در حال پردازش...")
-                        respond = f"خیلی خوشبختم {new_name}."
-                        print(f"🤖 Bot: {respond}")
-                        if tts: sr, w = tts.synthesize(respond); play(w, sr)
-                        time.sleep(1)
-                        continue
+                FAST_RESPONSES = {
+                    "سلام": "سَلام! خوشحالَم می بینَمِت.",
+                    "سلام خوبی": "سَلام عَزیزَم، مَن عالی‌اَم! تُو چِطوری؟",
+                    "چطوری": "مَمنون، هَمه چیز مُرَتَّب اَست.",
+                    "خوبی": "مِرسی کِه پُرسیدی، مَن خوبَم.",
+                    "چه خبر": "سَلامَتی! مُنتَظِرِ سُوالاتِ تُو هَستَم.",
+                    "خداحافظ": "بِه اُمیدِ دیدار! خُداحافِظ.",
+                    "ممنون": "خواهِش می‌کنَم دوستِ مَن."
+                }
+                cleaned_q = q_text.replace("؟", "").replace("!", "").strip()
+                fast_answer = None
+                for key, val in FAST_RESPONSES.items():
+                    if key == cleaned_q or q_text.startswith(key + " "):
+                        fast_answer = val
+                        break
 
-                if "اسم من چیه" in q_text or "من کیم" in q_text or "اسمم چیه" in q_text:
-                    ROBOT.set_caption("در حال پردازش...")
-                    if CURRENT_USER_DISPLAY == "Unknown" or CURRENT_USER_DISPLAY == "Guest":
-                        respond = "هنوز اسمت رو نمیدونم."
-                    else:
-                        respond = f"اسم شما {CURRENT_USER_DISPLAY} است."
-                    print(f"🤖 Bot: {respond}")
+                if fast_answer:
+                    print(f"⚡ Fast Reply: {fast_answer}")
+                    if tts: sr, w = tts.synthesize(fast_answer); play(w, sr)
+                    time.sleep(0.5)
+                    continue
+
+                # =========================================================
+                # 🧠 2. WHO AM I?
+                # =========================================================
+                if "اسم من چیه" in q_text or "من کیم" in q_text:
+                    saved_name = None
+                    if CURRENT_USER_ID != "Guest":
+                        saved_name = memory_sys.get_profile_value(CURRENT_USER_ID, "name")
+                    respond = f"اِسمِ شُما {saved_name} اَست." if saved_name else "هَنوز اِسمَت را نِمیدانَم."
                     if tts: sr, w = tts.synthesize(respond); play(w, sr)
                     time.sleep(1)
                     continue
 
                 # =========================================================
-                # 🟢 2. AI Logic
+                # 💾 3. NAME LEARNING
+                # =========================================================
+                detected_name = ""
+                prefixes = ["اسم من", "اسمم", "من", "نام من"]
+                suffixes = ["است", "هستم", "ه", "می‌باشد"]
+                clean_q = q_text
+
+                if any(p in q_text for p in prefixes) and len(q_text.split()) < 6:
+                    for p in prefixes: clean_q = clean_q.replace(p, "")
+                    for s in suffixes:
+                        clean_q = clean_q.replace(f" {s}", "").strip()
+                        if clean_q.endswith(f"{s}"):
+                            if s == "ه" and len(clean_q) > 2:
+                                clean_q = clean_q[:-1]
+                            elif s != "ه":
+                                clean_q = clean_q.replace(s, "")
+                    clean_q = clean_q.strip()
+                    if len(clean_q) > 2 and " " not in clean_q:
+                        if clean_q not in ["چیه", "کیه", "چیست", "کیست"]:
+                            detected_name = clean_q
+
+                if detected_name:
+                    if CURRENT_USER_ID != "Guest":
+                        memory_sys.update_profile(CURRENT_USER_ID, "name", detected_name)
+                        CURRENT_USER_DISPLAY = detected_name
+                        resp = f"چَشم، اِسمَت را «{detected_name}» ذَخیرِه کَردَم."
+                        if tts: sr, w = tts.synthesize(resp); play(w, sr)
+                        time.sleep(1)
+                        continue
+
+                # =========================================================
+                # 📜 4. MEMORY RECALL
+                # =========================================================
+                summary_mode = None
+                check_text = q_text.lower()
+
+                if "چی گفتیم" in check_text or "چه صحبت" in check_text or "حرف زدیم" in check_text or "مرور" in check_text or "خلاصه" in check_text:
+                    if "امروز" in check_text:
+                        summary_mode = "today"
+                    else:
+                        summary_mode = "all"
+
+                if summary_mode:
+                    if CURRENT_USER_ID == "Guest":
+                        resp = "مَن حافِظِه‌ای اَز شُما نَدارَم چون هَنوز ثَبتِ‌نام نَکَردِه‌اید."
+                    else:
+                        ROBOT.set_state("thinking")
+                        ROBOT.set_caption("در حال مرور خاطرات...")
+                        logs = memory_sys.get_conversation_log(CURRENT_USER_ID, mode=summary_mode)
+                        if not logs:
+                            resp = "ما اِمروز هَنوز صُحبَتی نَکَردیم." if summary_mode == "today" else "مَن هَنوز چیزی یادَم نِمی‌آیَد."
+                        else:
+                            prompt = (
+                                f"System: You are a helpful assistant. The user is asking to recall past conversations.\n"
+                                f"Task: Based on the LOGS below, summarize what you and the user talked about in Persian (Farsi).\n"
+                                f"Rules: Keep it brief, friendly, and in bullet points if possible. Say 'ما در مورد ... صحبت کردیم'.\n\n"
+                                f"LOGS:\n{logs}\n\n"
+                                f"Assistant:"
+                            )
+                            try:
+                                print("📜 Generating Summary...")
+                                resp = llm.invoke(prompt).strip()
+                            except Exception as e:
+                                resp = "مُتاسِفانِه نَتَوانِستَم خاطِرات را بازیابی کُنَم."
+
+                    print(f"🤖 MemoryBot: {resp}")
+
+                    if not resp.endswith((".", "!", "?", "؟")): resp += "."
+
+                    # 🟢 اعمال دیکشنری تلفظ روی حافظه هم
+                    tts_text = fix_pronunciation(resp)
+
+                    forbidden_chars = ["*", "_", "+", "-", "="]
+                    for char in forbidden_chars: tts_text = tts_text.replace(char, " ")
+                    tts_text = tts_text.replace("\n", ". ")
+
+                    if tts: sr, w = tts.synthesize(tts_text); play(w, sr)
+                    time.sleep(1)
+                    continue
+
+                # =========================================================
+                # 🤖 5. AI GENERATION (TEACHING MODE)
                 # =========================================================
                 ROBOT.set_state("thinking")
-                ROBOT.set_caption("در حال فکر کردن...")
-                user_history = ""
-                if CURRENT_USER_ID != "Guest":
-                    user_history = get_smart_history(CURRENT_USER_ID)
-
                 final_context = ""
                 if cached_doc_context:
                     relevant_snippet = filter_context_by_keywords(cached_doc_context, q_text)
-                    if relevant_snippet:
-                        final_context = relevant_snippet
-                    else:
-                        final_context = ""
+                    if relevant_snippet: final_context = relevant_snippet
 
                 prompt = (
-                    f"### System:\n"
-                    f"You are a helpful Teacher Assistant Robot speaking Persian (Farsi).\n"
-                    f"Answer based ONLY on the CLASS DOCUMENTS provided below.\n\n"
-
-                    f"### CLASS DOCUMENTS:\n{final_context}\n\n"
-                    f"### History:\n{user_history}\n\n"
-                    f"### Question:\n{q_text}\n\n"
-
-                    f"### STRICT RULES:\n"
-                    f"1. Start answer with 'SOURCE: [File Name]'.\n"
-                    f"2. Explain simply in Persian.\n"
-                    f"3. **UNKNOWN:** If answer is NOT in documents, SAY: 'من فقط درباره درس‌ها می‌دانم و جواب این سوال در جزوه نیست.'\n"
-                    f"4. **GIBBERISH:** If input is nonsense, SAY: 'متوجه نشدم، لطفا واضح‌تر بگویید.'\n"
-                    f"5. **NO EXTRA TEXT:** Do not translate to Chinese or English. Do not explain your rules.\n\n"
-
-                    f"### Assistant (Persian):"
+                    f"System: You are a helpful Persian teaching assistant. Respond ONLY in Farsi.\n"
+                    f"Task: Answer the user question based on the Context below.\n"
+                    f"Rules:\n"
+                    f"1. Use short sentences. Use commas (،) and periods (.) frequently to ensure clear speech.\n"
+                    f"2. If answer is in Context, say: 'SOURCE: Document'. Then answer.\n"
+                    f"3. If answer is NOT in Context, use your own knowledge and say: 'SOURCE: Knowledge'. Then answer accurately.\n"
+                    f"4. Do NOT hallucinate. Elephants do NOT live in water.\n\n"
+                    f"Context:\n{final_context}\n\n"
+                    f"User: {q_text}\n"
+                    f"Assistant:"
                 )
 
                 try:
-                    ans = llm.invoke(prompt, stop=["### User:", "User:", "History:", "大纲", "翻译"]).strip()
-                    print(f"\n🧠 [DEBUG] RAW OUTPUT:\n{ans}\n")
+                    ans = llm.invoke(prompt, stop=["### User:", "User:"]).strip()
+                    print(f"\n🧠 [DEBUG] RAW: {ans}\n")
 
-                    # --- CLEANING ---
-                    garbage_triggers = ["大纲", "翻译", "History:", "Strict Rules:", "###"]
-                    for trigger in garbage_triggers:
-                        if trigger in ans: ans = ans.split(trigger)[0]
+                    garbage = ["<|im_end|>", "<|im_start|>", "System:", "User:", "Assistant:", "###"]
+                    for g in garbage: ans = ans.replace(g, "")
 
-                    source_log = "Unknown"
-                    clean_ans = ans
+                    final_spoken_text = ans.replace("SOURCE: Document", "") \
+                        .replace("SOURCE: Knowledge", "") \
+                        .replace("SOURCE: General Knowledge", "") \
+                        .replace("SOURCE:", "") \
+                        .strip()
 
-                    if "SOURCE:" in ans:
-                        lines = ans.split('\n')
-                        cleaned_lines = []
-                        for line in lines:
-                            if "SOURCE:" in line:
-                                source_log = line.replace("SOURCE:", "").strip()
-                            else:
-                                cleaned_lines.append(line)
-                        clean_ans = "\n".join(cleaned_lines).strip()
+                    # 🟢 1. اعمال دیکشنری تلفظ (مهمترین بخش)
+                    tts_text = fix_pronunciation(final_spoken_text)
 
-                    # ====================================================
-                    # 🟢 MANUAL FLATTENING (Updated to remove numbers)
-                    # ====================================================
+                    # 🟢 2. جدا کردن کاما از کلمات
+                    tts_text = tts_text.replace("،", " ، ")
+                    tts_text = tts_text.replace(",", " , ")
 
-                    # 1. Remove Markdown symbols
-                    tts_text = clean_ans.replace("*", "").replace("#", "").replace("- ", " ").replace("•", "")
+                    forbidden_chars = ["*", "_", "+", "-", "="]
+                    for char in forbidden_chars:
+                        tts_text = tts_text.replace(char, " ")
 
-                    # 🟢 2. REMOVE NUMBERS (1. , 2. , 3. ...)
-                    # This removes any number followed by a dot
-                    tts_text = re.sub(r'\d+\.', '', tts_text)
-
-                    # 3. Replace Colons
-                    tts_text = tts_text.replace(":", " ")
-
-                    # 4. Replace Newlines with Dots
                     tts_text = tts_text.replace("\n", ". ")
-
-                    # 5. Remove extra spaces
+                    tts_text = re.sub(r'[a-zA-Z]', '', tts_text)
+                    tts_text = re.sub(r'\d+\.', '', tts_text)
+                    tts_text = tts_text.replace("(", " ").replace(")", " ")
                     tts_text = re.sub(r'\s+', ' ', tts_text).strip()
 
-                    print(f"🧐 [SOURCE CHECK]: {source_log}")
-                    print(f"🗣️ TTS TEXT: {tts_text}")
+                    # تضمین نقطه
+                    if tts_text and not tts_text.endswith((".", "!", "?", "؟")):
+                        tts_text += "."
+
+                    print(f"🗣️ TTS CLEAN: {tts_text}")
+
+                    if tts_text:
+                        raw_sentences = re.split(r'([.?!؟])', tts_text)
+                        sentences = []
+                        temp_sent = ""
+
+                        for part in raw_sentences:
+                            if part.strip() in [".", "?", "!", "؟"]:
+                                temp_sent += part
+                                sentences.append(temp_sent.strip())
+                                temp_sent = ""
+                            else:
+                                temp_sent += part
+                        if temp_sent.strip(): sentences.append(temp_sent.strip())
+
+                        for sent in sentences:
+                            if len(sent) > 1 and any(c >= 'آ' and c <= 'ی' for c in sent):
+                                if not sent.endswith((".", "!", "?", "؟")): sent += "."
+                                print(f"Sound Chunk: {sent}")
+                                if tts:
+                                    sr, w = tts.synthesize(sent)
+                                    play(w, sr)
 
                     should_save = True
-                    if "متوجه نشدم" in tts_text or "در جزوه نیست" in tts_text: should_save = False
-
+                    if "متوجه نشدم" in tts_text: should_save = False
                     if CURRENT_USER_ID != "Guest" and should_save:
                         memory_sys.save_interaction(CURRENT_USER_ID, q_text, tts_text)
 
-                    if tts: sr, w = tts.synthesize(tts_text); play(w, sr)
-
                 except Exception as e:
-                    print(f"AI Error: {e}")
+                    print(f"❌ AI Error: {e}")
+                    traceback.print_exc()
+
             else:
                 if ROBOT: ROBOT.trigger_shake()
-                if tts: sr, w = tts.synthesize("چیزی نگفتی"); play(w, sr)
 
             time.sleep(0.5)
 
@@ -688,8 +837,3 @@ if __name__ == "__main__":
     t.daemon = True
     t.start()
     ROBOT.run()
-
-
-
-
-
