@@ -17,7 +17,7 @@ import face_recognition
 # ==========================================
 # ⚙️ SETTINGS
 # ==========================================
-TEST_TEXT_MODE = False
+TEST_TEXT_MODE = True
 
 # ✅ IMPORT UTILS
 try:
@@ -113,6 +113,9 @@ def fix_pronunciation(text):
         "چگونه": "چِگونِه",
         "کجا": "کُجا",
         "کی": "کِی",  # زمان
+        "کنذ":"کُنَد",
+        "می کنند":"می کُنَند",
+
 
         # --- مدرسه و آموزش ---
         "معلم": "مُعَلِّم",
@@ -131,7 +134,7 @@ def fix_pronunciation(text):
         "جواب": "جَواب",
         "پاسخ": "پاسُخ",
         "دانش": "دانِش",
-        "آموز": "آموز",
+        "کَتبی": "کتبی",
 
         # --- افعال و ضمایر ---
         " است ": " اَست ",
@@ -188,7 +191,56 @@ def fix_pronunciation(text):
         "خواب": "خوُاب",
         "کرم": "کِرم",
         "گل": "گُل",
-        "چهارپایه":"چاهارپا"
+        "چهارپایه": "چاهارپا",
+        "اقتصاد": "اِقتِصاد",
+        "ارتباط": "اِرتِباط",
+        "مردم": "مَردُم",
+        "حکمت": "حِکمَت",
+        "ذکر": "ذِکر",
+        "عقل": "عَقل",
+        "قدرت" : "قُدرَت",
+         "شرف": "شَرَف",
+        "از": "اَز",
+        "ممکن"  : "مُمکِن",
+        "تقریبا": "تَقریباً",
+        "واقعا": "واقِعاً",
+        "معمولا": "مَعمولاً",
+        "احتمالا": "اِحتِمالاً",
+        "هست": "هَست",
+        "دقت": "دِقَّت",
+        "موثر": "مُؤَثِّر",
+        "تاثیر": "تَأثیر",
+        "متاسف": "مُتَأَسِّف",
+        "متوجه" : "مُتَوَجِّه",
+        "مکمل": "مُکَمَّل",
+        "منطقه": "مَنطِقِه",
+        "گفت": "گُفت",
+        "رفت": "رَفت",
+        "شد": "شُد",
+        "نعمت": "نِعمَت",
+        "جنگل": "جَنگَل",
+        "شجاعت": "شَجاعَت",
+        "محبت": "مَحَبَّت",
+        "حکم": "حُکم",
+        "عدل": "عَدل",
+        "ظلم": "ظُلم",
+        "صبر": "صَبر",
+        "شکر": "شُکر",
+        "تدریس": "تَدریس",
+        "سگ": "سَگ",
+        "تحقیق": "تَحقیق",
+        "مدرس": "مُدَرِّس",
+        "دانشجو": "دانِشجو",
+        "دانش‌آموز": "دانِش‌آموز",
+        "آموزش": "آموزِش",
+        "خواهش": "خواهِش",
+        "زِبر": "زبر"  ,
+        "کَلسیُم": "کلسیم",
+        "حَواس":"حواس",
+        "مَزه":"مزه",
+        "لامِسه" :"لامسه",
+        "چِشایی": "چشایی",
+        "اَندام": "اندام"
     }
 
     # جایگزینی کلمات
@@ -200,7 +252,8 @@ def fix_pronunciation(text):
             text = text[:-len(wrong)] + correct
         if text == wrong:
             text = correct
-
+        pattern = r'(?![\u0600-\u06FF])' + re.escape(wrong) + r'(?![\u0600-\u06FF])'
+        text = re.sub(pattern, correct, text)
     return text
 
 
@@ -433,7 +486,7 @@ def perform_face_login(rec=None):
                     display_name = p_name_farsi
                     if tts: sr, w = tts.synthesize(f"خوشبَختَم {p_name_farsi}."); play(w, sr)
                     if ROBOT:
-                        ROBOT.set_caption(f"ثبت شد: {display_name}")
+                        ROBOT.set_caption(f"ثَبْت  شد: {display_name}")
                         ROBOT.trigger_nod()
                     return identified_id, display_name
                 return "Guest", "Guest"
@@ -449,7 +502,7 @@ def perform_face_login(rec=None):
 
 
 # ---------------------------------------------------------
-# 🟢 ULTRA-SMART SEARCH (این تابع حذف شده بود!)
+# 🟢 ULTRA-SMART SEARCH
 # ---------------------------------------------------------
 def filter_context_by_keywords(full_text, question):
     if not full_text: return ""
@@ -501,10 +554,11 @@ def run_ai_logic():
 
     try:
         # 🟢 Brain Setup
+        # تنظیمات جدید: دما افزایش یافت تا جواب‌ها کامل‌تر شوند
         llm = OllamaLLM(
             model="llama3.1",
             base_url="http://localhost:11434",
-            temperature=0.1,
+            temperature=0.2, # 🟢 UPDATE: Increased temperature for more complete answers
             keep_alive="0m"
         )
         tts = TextToSpeechService()
@@ -520,7 +574,7 @@ def run_ai_logic():
         print(f"Init Error: {e}")
 
     rec = Recorder() if not TEST_TEXT_MODE else None
-    WAKE_WORDS = ["سلام", "salam", "slm", "سالام", "سلان", "صلام", "hi", "hello", "درود", "سلم"]
+    WAKE_WORDS = ["سلام", "salam", "slm", "سالام", "سلان", "صلام", "hi", "hello", "درود"]
 
     print("\n✅ ROBOT READY")
     if TEST_TEXT_MODE:
@@ -583,7 +637,7 @@ def run_ai_logic():
                         if detected_num:
                             class_sys.set_user_class(CURRENT_USER_ID, detected_num)
                             user_class = detected_num
-                            if tts: sr, w = tts.synthesize(f"کِلاسِ {detected_num} ثَبت شُد."); play(w, sr)
+                            if tts: sr, w = tts.synthesize(f"کِلاسِ {detected_num} ثَبْت شُد."); play(w, sr)
 
             if CURRENT_USER_ID != "Guest" and not user_class:
                 print("⚠️ DEBUG: Auto-assigning Class 5")
@@ -681,7 +735,7 @@ def run_ai_logic():
                     if CURRENT_USER_ID != "Guest":
                         memory_sys.update_profile(CURRENT_USER_ID, "name", detected_name)
                         CURRENT_USER_DISPLAY = detected_name
-                        resp = f"چَشم، اِسمَت را «{detected_name}» ذَخیرِه کَردَم."
+                        resp = f"، اِسمَت را «{detected_name}» ذَخیرِه کَردَم."
                         if tts: sr, w = tts.synthesize(resp); play(w, sr)
                         time.sleep(1)
                         continue
@@ -700,7 +754,7 @@ def run_ai_logic():
 
                 if summary_mode:
                     if CURRENT_USER_ID == "Guest":
-                        resp = "مَن حافِظِه‌ای اَز شُما نَدارَم چون هَنوز ثَبتِ‌نام نَکَردِه‌اید."
+                        resp = "مَن حافِظِه‌ای اَز شُما نَدارَم چون هَنوز ثَبْتِ‌نام نَکَردِه‌اید."
                     else:
                         ROBOT.set_state("thinking")
                         ROBOT.set_caption("در حال مرور خاطرات...")
@@ -745,14 +799,16 @@ def run_ai_logic():
                     relevant_snippet = filter_context_by_keywords(cached_doc_context, q_text)
                     if relevant_snippet: final_context = relevant_snippet
 
+                # 🟢 UPDATE: دستورات جدید برای پاسخ کامل
                 prompt = (
                     f"System: You are a helpful Persian teaching assistant. Respond ONLY in Farsi.\n"
-                    f"Task: Answer the user question based on the Context below.\n"
+                    f"Task: Provide a complete and comprehensive answer to the user question.\n"
                     f"Rules:\n"
-                    f"1. Use short sentences. Use commas (،) and periods (.) frequently to ensure clear speech.\n"
-                    f"2. If answer is in Context, say: 'SOURCE: Document'. Then answer.\n"
-                    f"3. If answer is NOT in Context, use your own knowledge and say: 'SOURCE: Knowledge'. Then answer accurately.\n"
-                    f"4. Do NOT hallucinate. Elephants do NOT live in water.\n\n"
+                    f"1. Explain fully but keep sentences simple. Use commas (،) and periods (.) frequently to ensure clear speech.\n"
+                    f"2. If listing items, name ALL of them.\n"
+                    f"3. If answer is in Context, say: 'SOURCE: Document'. Then answer.\n"
+                    f"4. If answer is NOT in Context, use your own knowledge and say: 'SOURCE: Knowledge'. Then answer accurately.\n"
+                    f"5. Do NOT hallucinate. Elephants do NOT live in water.\n\n"
                     f"Context:\n{final_context}\n\n"
                     f"User: {q_text}\n"
                     f"Assistant:"

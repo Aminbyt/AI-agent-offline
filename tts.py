@@ -168,7 +168,7 @@ class TextToSpeechService:
         except Exception as e:
             print(f"❌ Init Error: {e}")
             self.device = "cpu"
-            self.model = ChatterboxMultilingualTTS.from_pretrained(device="cpu", local_files_only=True)
+            self.model = ChatterboxMultilingualTTS.from_pretrained(device="cpu")
 
     def make_cute_robot(self, audio, rate):
         """ ایجاد افکت رباتیک بامزه """

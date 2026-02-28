@@ -128,7 +128,7 @@ class RobotUI:
         elif state == "processing":
             self.caption = "پردازش..."
         elif state == "idle":
-            self.caption = "آماده"
+            self.caption = "در حال جواب دادن"
         elif state == "sleeping":
             self.caption = "خواب..."
 
